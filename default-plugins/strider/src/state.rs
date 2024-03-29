@@ -9,7 +9,7 @@ use zellij_tile::prelude::*;
 
 pub const ROOT: &str = "/host";
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum Mode {
     #[default]
     Normal,
@@ -245,21 +245,25 @@ impl State {
             }
         };
 
-        let _result = match self.mode {
-            Mode::Create => self.handle_file_create(target),
-            Mode::Copy => self.handle_file_copy(src, target),
-            Mode::Move => self.handle_file_move(src, target),
+        let result = match self.mode {
+            Mode::Create => self.handle_file_create(&target),
+            Mode::Copy => self.handle_file_copy(&src, &target),
+            Mode::Move => self.handle_file_move(&src, &target),
             Mode::Delete => {
                 if self.search_term == "y" {
-                    self.handle_file_delete(src)
+                    self.handle_file_delete(&src)
                 } else { Ok(()) }
             },
             _ => Ok(()),
         };
 
+        if let Err(err) = result {
+            dbg!("Unable to perform file manipulation", &self.mode, src, target, err);
+        }
+
         self.clear_search_term_or_descend(); // resets mode to Normal
     }
-    fn handle_file_create(&self, target: FsEntry) -> Result<(), std::io::Error> {
+    fn handle_file_create(&self, target: &FsEntry) -> Result<(), std::io::Error> {
         let target_path = target.get_pathbuf();
         if let Some(parent) = target_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -267,7 +271,7 @@ impl State {
         std::fs::File::create(&target_path)?;
         Ok(())
     }
-    fn handle_file_copy(&self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
+    fn handle_file_copy(&self, source: &FsEntry, target: &FsEntry) -> Result<(), std::io::Error> {
         let target_path = target.get_pathbuf();
         let src_path = source.get_pathbuf();
 
@@ -282,7 +286,7 @@ impl State {
                 let target_entry_path = target_path.join(entry_path.file_name().unwrap());
 
                 if entry_path.is_dir() {
-                    self.handle_file_copy(FsEntry::Dir(entry_path.clone()), FsEntry::Dir(target_entry_path))?;
+                    self.handle_file_copy(&FsEntry::Dir(entry_path.clone()), &FsEntry::Dir(target_entry_path))?;
                 } else {
                     std::fs::copy(&entry_path, &target_entry_path)?;
                 }
@@ -292,11 +296,11 @@ impl State {
         }
         Ok(())
     }
-    fn handle_file_move(&mut self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
+    fn handle_file_move(&self, source: &FsEntry, target: &FsEntry) -> Result<(), std::io::Error> {
         std::fs::rename(&source.get_pathbuf(), target.get_pathbuf())?;
         Ok(())
     }
-    fn handle_file_delete(&self, source: FsEntry) -> Result<(), std::io::Error> {
+    fn handle_file_delete(&self, source: &FsEntry) -> Result<(), std::io::Error> {
         let path = source.get_pathbuf();
         if source.is_folder() {
             std::fs::remove_dir_all(&path)?;
