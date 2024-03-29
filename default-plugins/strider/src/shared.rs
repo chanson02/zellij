@@ -1,27 +1,97 @@
+use crate::state::Mode;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 use zellij_tile::prelude::*;
 
-pub fn render_instruction_line(y: usize, max_cols: usize) {
-    if max_cols > 78 {
-        let text = "Help: go back with <Ctrl c>, go to root with /, <Ctrl e> - toggle hidden files";
-        let text = Text::new(text)
-            .color_range(3, 19..27)
-            .color_range(3, 45..46)
-            .color_range(3, 48..56);
-        print_text_with_coordinates(text, 0, y, Some(max_cols), None);
-    } else if max_cols > 56 {
-        let text = "Help: <Ctrl c> - back, / - root, <Ctrl e> - hidden files";
-        let text = Text::new(text)
-            .color_range(3, 6..14)
-            .color_range(3, 23..24)
-            .color_range(3, 33..41);
-        print_text_with_coordinates(text, 0, y, Some(max_cols), None);
-    } else if max_cols > 25 {
-        let text = "<Ctrl c> - back, / - root";
-        let text = Text::new(text).color_range(3, ..8).color_range(3, 17..18);
-        print_text_with_coordinates(text, 0, y, Some(max_cols), None);
+pub fn render_instruction_tip(y: usize, max_cols: usize) {
+    if max_cols < 11 {
+        return;
     }
+    let text = "?: <Ctrl h>";
+    let text = Text::new(text).color_range(3, 3..11);
+    print_text_with_coordinates(text, 0, y, Some(max_cols), None);
+}
+
+enum HelpTextSize {
+    Small,
+    Medium,
+    Large,
+}
+
+fn render_help_text(bind: &str, desc: &str, max_cols: usize, y: usize) {
+    let len = bind.len();
+    let padding = " ".repeat(max_cols.saturating_sub(len + desc.len()));
+    let text = format!("{}{}{}", bind, padding, desc);
+    let text = Text::new(text).color_range(3, 0..len);
+    print_text_with_coordinates(text, 0, y, Some(max_cols), None)
+}
+
+pub fn render_instruction_line(max_cols: usize) {
+    let text_size = if max_cols > 28 {
+        HelpTextSize::Large
+    } else if max_cols > 15 {
+        HelpTextSize::Medium
+    } else if max_cols > 8 {
+        HelpTextSize::Small
+    } else {
+        return;
+    };
+
+    let bind = "<Ctrl c>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Go back",
+        HelpTextSize::Medium => "back",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 0);
+
+    let bind = "/";
+    let desc = match text_size {
+        HelpTextSize::Large => "Go to root",
+        HelpTextSize::Medium => "root",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 1);
+
+    let bind = "<Ctrl e>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Toggle hidden files",
+        HelpTextSize::Medium => "hidden",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 2);
+
+    let bind = "<Ctrl r>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Rename / move file",
+        HelpTextSize::Medium => "rename",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 3);
+
+    let bind = "<Ctrl d>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Delete file",
+        HelpTextSize::Medium => "delete",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 4);
+
+    let bind = "<Ctrl y>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Copy & paste file",
+        HelpTextSize::Medium => "copy",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 5);
+
+    let bind = "<Ctrl a>";
+    let desc = match text_size {
+        HelpTextSize::Large => "Create new file",
+        HelpTextSize::Medium => "create",
+        _ => "",
+    };
+    render_help_text(bind, desc, max_cols, 6);
 }
 
 pub fn render_list_tip(y: usize, max_cols: usize) {
@@ -70,8 +140,14 @@ pub fn calculate_list_bounds(
     }
 }
 
-pub fn render_search_term(search_term: &str) {
-    let prompt = "FIND: ";
+pub fn render_search_term(search_term: &str, mode: &Mode) {
+    let prompt = match mode {
+        Mode::Create => "CREATE: ",
+        Mode::Copy => "PASTE: ",
+        Mode::Delete => "CONFIRM (y): ",
+        Mode::Move => "EDIT: ",
+        _ => "FIND: ",
+    };
     let text = Text::new(format!("{}{}_", prompt, search_term))
         .color_range(2, 0..prompt.len())
         .color_range(3, prompt.len()..);

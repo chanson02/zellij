@@ -4,7 +4,9 @@ mod shared;
 mod state;
 
 use crate::file_list_view::FsEntry;
-use shared::{render_current_path, render_instruction_line, render_search_term};
+use shared::{
+    render_current_path, render_instruction_line, render_instruction_tip, render_search_term,
+};
 use state::{refresh_directory, State};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -57,71 +59,72 @@ impl ZellijPlugin for State {
     }
 
     fn update(&mut self, event: Event) -> bool {
-        let mut should_render = false;
-        match event {
-            Event::FileSystemUpdate(paths) => {
-                self.update_files(paths);
-                should_render = true;
+        let mut should_render = true;
+
+        match self.mode {
+            state::Mode::Keybinds => {
+                self.mode = state::Mode::Normal;
+                return should_render;
             },
+            _ => {},
+        }
+
+        match event {
+            Event::FileSystemUpdate(paths) => self.update_files(paths),
             Event::Key(key) => match key {
-                Key::Char(character) if character != '\n' => {
-                    self.update_search_term(character);
-                    should_render = true;
-                },
-                Key::Backspace => {
-                    self.handle_backspace();
-                    should_render = true;
-                },
-                Key::Esc | Key::Ctrl('c') => {
-                    self.clear_search_term_or_descend();
-                    should_render = true;
-                },
-                Key::Up => {
-                    self.move_selection_up();
-                    should_render = true;
-                },
-                Key::Down => {
-                    self.move_selection_down();
-                    should_render = true;
-                },
+                Key::Char(character) if character != '\n' => self.update_search_term(character),
+                Key::Backspace => self.handle_backspace(),
+                Key::Esc | Key::Ctrl('c') => self.clear_search_term_or_descend(),
+                Key::Up => self.move_selection_up(),
+                Key::Down => self.move_selection_down(),
                 Key::Char('\n') if self.handling_filepick_request_from.is_some() => {
-                    self.send_filepick_response();
+                    self.send_filepick_response()
                 },
-                Key::Char('\n') => {
-                    self.open_selected_path();
+                Key::Char('\n') => match self.mode {
+                    state::Mode::Normal | state::Mode::Searching => self.open_selected_path(),
+                    state::Mode::Create
+                    | state::Mode::Copy
+                    | state::Mode::Delete
+                    | state::Mode::Move => {
+                        self.handle_file_manipulation();
+                        refresh_directory(&self.file_list_view.path);
+                    },
+                    _ => {},
                 },
-                Key::Right | Key::BackTab => {
-                    self.traverse_dir();
-                    should_render = true;
-                },
-                Key::Left => {
-                    self.descend_to_previous_path();
-                    should_render = true;
-                },
+                Key::Right | Key::BackTab => self.traverse_dir(),
+                Key::Left => self.descend_to_previous_path(),
                 Key::Ctrl('e') => {
-                    should_render = true;
                     self.toggle_hidden_files();
                     refresh_directory(&self.file_list_view.path);
+                },
+                Key::Ctrl('h') => self.mode = state::Mode::Keybinds,
+                Key::Ctrl('r') => {
+                    self.move_entry_to_search();
+                    self.mode = state::Mode::Move
+                },
+                Key::Ctrl('d') => {
+                    self.search_term = "".to_string();
+                    self.mode = state::Mode::Delete
+                },
+                Key::Ctrl('y') => {
+                    self.move_entry_to_search();
+                    self.mode = state::Mode::Copy
+                },
+                Key::Ctrl('a') => {
+                    self.search_term = "".to_string();
+                    self.mode = state::Mode::Create;
                 },
                 _ => (),
             },
             Event::Mouse(mouse_event) => match mouse_event {
-                Mouse::ScrollDown(_) => {
-                    self.move_selection_down();
-                    should_render = true;
-                },
-                Mouse::ScrollUp(_) => {
-                    self.move_selection_up();
-                    should_render = true;
-                },
-                Mouse::LeftClick(line, _) => {
-                    self.handle_left_click(line);
-                    should_render = true;
-                },
-                _ => {},
+                Mouse::ScrollDown(_) => self.move_selection_down(),
+                Mouse::ScrollUp(_) => self.move_selection_up(),
+                Mouse::LeftClick(line, _) => self.handle_left_click(line),
+                _ => should_render = false,
             },
             _ => {
                 dbg!("Unknown event {:?}", event);
+                should_render = false;
             },
         };
         should_render
@@ -142,9 +145,19 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        match self.mode {
+            state::Mode::Keybinds => {
+                render_instruction_line(cols);
+                render_instruction_tip(rows, cols);
+                return;
+            },
+            _ => {},
+        }
+
         self.current_rows = Some(rows);
         let rows_for_list = rows.saturating_sub(6);
-        render_search_term(&self.search_term);
+
+        render_search_term(&self.search_term, &self.mode);
         render_current_path(
             &self.initial_cwd,
             &self.file_list_view.path,
@@ -152,11 +165,10 @@ impl ZellijPlugin for State {
             self.handling_filepick_request_from.is_some(),
             cols,
         );
-        if self.is_searching {
-            self.search_view.render(rows_for_list, cols);
-        } else {
-            self.file_list_view.render(rows_for_list, cols);
+        match self.mode {
+            state::Mode::Searching => self.search_view.render(rows_for_list, cols),
+            _ => self.file_list_view.render(rows_for_list, cols),
         }
-        render_instruction_line(rows, cols);
+        render_instruction_tip(rows, cols);
     }
 }

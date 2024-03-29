@@ -9,42 +9,65 @@ use zellij_tile::prelude::*;
 
 pub const ROOT: &str = "/host";
 
+#[derive(Default, Clone, Debug)]
+pub enum Mode {
+    #[default]
+    Normal,
+    // Loading,
+    Searching,
+    Keybinds,
+    Create,
+    Copy,
+    Delete,
+    Move,
+}
+
 #[derive(Default)]
 pub struct State {
     pub file_list_view: FileListView,
     pub search_view: SearchView,
     pub hide_hidden_files: bool,
-    pub loading: bool,
     pub loading_animation_offset: u8,
     pub should_open_floating: bool,
     pub current_rows: Option<usize>,
     pub handling_filepick_request_from: Option<(PipeSource, BTreeMap<String, String>)>,
     pub initial_cwd: PathBuf, // TODO: get this from zellij
-    pub is_searching: bool,
     pub search_term: String,
     pub close_on_selection: bool,
+    pub mode: Mode,
 }
 
 impl State {
     pub fn update_search_term(&mut self, character: char) {
         self.search_term.push(character);
-        if &self.search_term == ".." {
-            self.descend_to_previous_path();
-        } else if &self.search_term == "/" {
-            self.descend_to_root_path();
-        } else {
-            self.is_searching = true;
-            self.search_view
-                .update_search_results(&self.search_term, &self.file_list_view.files);
+        match self.mode {
+            Mode::Create | Mode::Copy | Mode::Delete | Mode::Move => return,
+            _ => {
+                if self.search_term == ".." {
+                    self.descend_to_previous_path();
+                } else if &self.search_term == "/" {
+                    self.descend_to_root_path();
+                } else {
+                    self.mode = Mode::Searching;
+                    self.search_view
+                        .update_search_results(&self.search_term, &self.file_list_view.files);
+                }
+            },
         }
     }
     pub fn handle_backspace(&mut self) {
         if self.search_term.is_empty() {
-            self.descend_to_previous_path();
+            match self.mode {
+                Mode::Normal | Mode::Searching => self.descend_to_previous_path(),
+                _ => {},
+            }
         } else {
             self.search_term.pop();
             if self.search_term.is_empty() {
-                self.is_searching = false;
+                match self.mode {
+                    Mode::Searching => self.mode = Mode::Normal,
+                    _ => {},
+                }
             }
             self.search_view
                 .update_search_results(&self.search_term, &self.file_list_view.files);
@@ -57,50 +80,66 @@ impl State {
             self.search_term.clear();
             self.search_view
                 .update_search_results(&self.search_term, &self.file_list_view.files);
-            self.is_searching = false;
         }
+        self.mode = Mode::Normal;
     }
     pub fn move_selection_up(&mut self) {
-        if self.is_searching {
-            self.search_view.move_selection_up();
-        } else {
-            self.file_list_view.move_selection_up();
-        }
+        match self.mode {
+            Mode::Searching => self.search_view.move_selection_up(),
+            _ => self.file_list_view.move_selection_up(),
+        };
     }
     pub fn move_selection_down(&mut self) {
-        if self.is_searching {
-            self.search_view.move_selection_down();
-        } else {
-            self.file_list_view.move_selection_down();
+        match self.mode {
+            Mode::Searching => self.search_view.move_selection_down(),
+            _ => self.file_list_view.move_selection_down(),
+        }
+    }
+    pub fn get_selected_entry(&mut self) -> Option<FsEntry> {
+        let entry = match self.mode {
+            Mode::Searching => self.search_view.get_selected_entry(),
+            _ => self.file_list_view.get_selected_entry(),
+        };
+        return entry;
+    }
+    pub fn move_entry_to_search(&mut self) {
+        if let Some(entry) = self.get_selected_entry() {
+            self.search_term = entry
+                .get_pathbuf_without_root_prefix()
+                .display()
+                .to_string();
         }
     }
     pub fn handle_left_click(&mut self, line: isize) {
         if let Some(current_rows) = self.current_rows {
             let rows_for_list = current_rows.saturating_sub(5);
-            if self.is_searching {
-                let (start_index, _selected_index_in_range, _end_index) = calculate_list_bounds(
-                    self.search_view.search_result_count(),
-                    rows_for_list,
-                    Some(self.search_view.selected_search_result),
-                );
-                let prev_selected = self.search_view.selected_search_result;
-                self.search_view.selected_search_result =
-                    (line as usize).saturating_sub(2) + start_index;
-                if prev_selected == self.search_view.selected_search_result {
-                    self.traverse_dir();
-                }
-            } else {
-                let (start_index, _selected_index_in_range, _end_index) = calculate_list_bounds(
-                    self.file_list_view.files.len(),
-                    rows_for_list,
-                    self.file_list_view.selected(),
-                );
-                let prev_selected = self.file_list_view.selected();
-                *self.file_list_view.selected_mut() =
-                    (line as usize).saturating_sub(2) + start_index;
-                if prev_selected == self.file_list_view.selected() {
-                    self.traverse_dir();
-                }
+            match self.mode {
+                Mode::Searching => {
+                    let (start_index, _selected_index_in_range, _end_index) = calculate_list_bounds(
+                        self.search_view.search_result_count(),
+                        rows_for_list,
+                        Some(self.search_view.selected_search_result),
+                    );
+                    let prev_selected = self.search_view.selected_search_result;
+                    self.search_view.selected_search_result =
+                        (line as usize).saturating_sub(2) + start_index;
+                    if prev_selected == self.search_view.selected_search_result {
+                        self.traverse_dir();
+                    }
+                },
+                _ => {
+                    let (start_index, _selected_index_in_range, _end_index) = calculate_list_bounds(
+                        self.file_list_view.files.len(),
+                        rows_for_list,
+                        self.file_list_view.selected(),
+                    );
+                    let prev_selected = self.file_list_view.selected();
+                    *self.file_list_view.selected_mut() =
+                        (line as usize).saturating_sub(2) + start_index;
+                    if prev_selected == self.file_list_view.selected() {
+                        self.traverse_dir();
+                    }
+                },
             }
         }
     }
@@ -119,10 +158,9 @@ impl State {
         self.hide_hidden_files = !self.hide_hidden_files;
     }
     pub fn traverse_dir(&mut self) {
-        let entry = if self.is_searching {
-            self.search_view.get_selected_entry()
-        } else {
-            self.file_list_view.get_selected_entry()
+        let entry = match self.mode {
+            Mode::Searching => self.search_view.get_selected_entry(),
+            _ => self.file_list_view.get_selected_entry(),
         };
         if let Some(entry) = entry {
             match &entry {
@@ -137,7 +175,7 @@ impl State {
                 },
             }
         }
-        self.is_searching = false;
+        self.mode = Mode::Normal;
         self.search_term.clear();
         self.search_view.clear_and_reset_selection();
     }
@@ -190,6 +228,102 @@ impl State {
             },
             _ => {},
         }
+    }
+
+    pub fn handle_file_manipulation(&mut self) {
+        let src = self
+            .get_selected_entry()
+            .expect("Expected a selected entry");
+        let mut target_path = PathBuf::from(ROOT);
+        target_path.push(&self.search_term);
+        let target = match self.mode {
+            Mode::Create => FsEntry::File(target_path, 0),
+            _ => {
+                if src.is_folder() {
+                    FsEntry::Dir(target_path)
+                } else {
+                    FsEntry::File(
+                        target_path,
+                        src.size().expect("Target file should have a size"),
+                    )
+                }
+            },
+        };
+
+        let result = match self.mode {
+            Mode::Create => self.handle_file_create(&target),
+            Mode::Copy => self.handle_file_copy(&src, &target),
+            Mode::Move => self.handle_file_move(&src, &target),
+            Mode::Delete => {
+                if self.search_term == "y" {
+                    self.handle_file_delete(&src)
+                } else {
+                    Ok(())
+                }
+            },
+            _ => Ok(()),
+        };
+
+        if let Err(err) = result {
+            dbg!(
+                "Unable to perform file manipulation",
+                &self.mode,
+                src,
+                target,
+                err
+            );
+        }
+
+        self.clear_search_term_or_descend(); // resets mode to Normal
+    }
+    fn handle_file_create(&self, target: &FsEntry) -> Result<(), std::io::Error> {
+        let target_path = target.get_pathbuf();
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::File::create(&target_path)?;
+        Ok(())
+    }
+    fn handle_file_copy(&self, source: &FsEntry, target: &FsEntry) -> Result<(), std::io::Error> {
+        let target_path = target.get_pathbuf();
+        let src_path = source.get_pathbuf();
+
+        if source.is_folder() {
+            if !target_path.exists() {
+                std::fs::create_dir_all(target_path.clone())?;
+            }
+
+            for entry in std::fs::read_dir(src_path)? {
+                let entry = entry?;
+                let entry_path = entry.path();
+                let target_entry_path = target_path.join(entry_path.file_name().unwrap());
+
+                if entry_path.is_dir() {
+                    self.handle_file_copy(
+                        &FsEntry::Dir(entry_path.clone()),
+                        &FsEntry::Dir(target_entry_path),
+                    )?;
+                } else {
+                    std::fs::copy(&entry_path, &target_entry_path)?;
+                }
+            }
+        } else {
+            std::fs::copy(&source.get_pathbuf(), &target.get_pathbuf())?;
+        }
+        Ok(())
+    }
+    fn handle_file_move(&self, source: &FsEntry, target: &FsEntry) -> Result<(), std::io::Error> {
+        std::fs::rename(&source.get_pathbuf(), target.get_pathbuf())?;
+        Ok(())
+    }
+    fn handle_file_delete(&self, source: &FsEntry) -> Result<(), std::io::Error> {
+        let path = source.get_pathbuf();
+        if source.is_folder() {
+            std::fs::remove_dir_all(&path)?;
+        } else {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
     }
 }
 
