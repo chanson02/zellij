@@ -232,10 +232,18 @@ impl State {
 
     pub fn handle_file_manipulation(&mut self) {
         let src = self.get_selected_entry().expect("Expected a selected entry");
+        let mut target_path = PathBuf::from(ROOT);
+        target_path.push(&self.search_term);
+        let target = if src.is_folder() {
+            FsEntry::Dir(target_path)
+        } else {
+            FsEntry::File(target_path, src.size().expect("Target file should have a size"))
+        };
+
         let _result = match self.mode {
             Mode::Create => Ok(()),
             Mode::Copy => Ok(()),
-            Mode::Move => Ok(()),
+            Mode::Move => self.handle_file_move(src, target),
             Mode::Delete => {
                 if self.search_term == "y" {
                     self.handle_file_delete(src)
@@ -277,10 +285,9 @@ impl State {
             dbg!("Cound not copy file {:?} -> {:?}: {:?}", source, target, err);
         }
     }
-    fn handle_file_move(&mut self, source: PathBuf, target: PathBuf) {
-        if let Err(err) = std::fs::rename(&source, &target) {
-            dbg!("Cound not rename file {:?} -> {:?}: {:?}", source, target, err);
-        }
+    fn handle_file_move(&mut self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
+        std::fs::rename(&source.get_pathbuf(), target.get_pathbuf())?;
+        Ok(())
     }
     fn handle_file_delete(&self, source: FsEntry) -> Result<(), std::io::Error> {
         let path = source.get_pathbuf();
