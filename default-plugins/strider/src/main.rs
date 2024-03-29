@@ -59,108 +59,70 @@ impl ZellijPlugin for State {
     }
 
     fn update(&mut self, event: Event) -> bool {
+        let mut should_render = true;
+
         match self.mode {
             state::Mode::Keybinds => {
                 self.mode = state::Mode::Normal;
-                return true;
+                return should_render;
             },
             _ => {},
         }
 
-        let mut should_render = false;
         match event {
-            Event::FileSystemUpdate(paths) => {
-                self.update_files(paths);
-                should_render = true;
-            },
+            Event::FileSystemUpdate(paths) => self.update_files(paths),
             Event::Key(key) => match key {
-                Key::Char(character) if character != '\n' => {
-                    self.update_search_term(character);
-                    should_render = true;
-                },
-                Key::Backspace => {
-                    self.handle_backspace();
-                    should_render = true;
-                },
-                Key::Esc | Key::Ctrl('c') => {
-                    self.clear_search_term_or_descend();
-                    should_render = true;
-                },
-                Key::Up => {
-                    self.move_selection_up();
-                    should_render = true;
-                },
-                Key::Down => {
-                    self.move_selection_down();
-                    should_render = true;
-                },
-                Key::Char('\n') if self.handling_filepick_request_from.is_some() => {
-                    self.send_filepick_response();
-                },
+                Key::Char(character) if character != '\n' => self.update_search_term(character),
+                Key::Backspace => self.handle_backspace(),
+                Key::Esc | Key::Ctrl('c') => self.clear_search_term_or_descend(),
+                Key::Up => self.move_selection_up(),
+                Key::Down => self.move_selection_down(),
+                Key::Char('\n') if self.handling_filepick_request_from.is_some() => self.send_filepick_response(),
                 Key::Char('\n') => match self.mode {
                     state::Mode::Normal | state::Mode::Searching => self.open_selected_path(),
                     state::Mode::Create
                     | state::Mode::Copy
                     | state::Mode::Delete
-                    | state::Mode::Move => self.handle_file_manipulation(),
+                    | state::Mode::Move => {
+                        self.handle_file_manipulation();
+                        refresh_directory(&self.file_list_view.path);
+                    },
                     _ => {},
                 },
-                Key::Right | Key::BackTab => {
-                    self.traverse_dir();
-                    should_render = true;
-                },
-                Key::Left => {
-                    self.descend_to_previous_path();
-                    should_render = true;
-                },
+                Key::Right | Key::BackTab => self.traverse_dir(),
+                Key::Left => self.descend_to_previous_path(),
                 Key::Ctrl('e') => {
-                    should_render = true;
                     self.toggle_hidden_files();
                     refresh_directory(&self.file_list_view.path);
                 },
-                Key::Ctrl('h') => {
-                    should_render = true;
-                    self.mode = state::Mode::Keybinds;
-                },
+                Key::Ctrl('h') => self.mode = state::Mode::Keybinds,
                 Key::Ctrl('r') => {
-                    should_render = true;
                     self.move_entry_to_search();
                     self.mode = state::Mode::Move
                 },
                 Key::Ctrl('d') => {
-                    should_render = true;
                     self.search_term = "".to_string();
                     self.mode = state::Mode::Delete
                 },
                 Key::Ctrl('y') => {
-                    should_render = true;
                     self.move_entry_to_search();
                     self.mode = state::Mode::Copy
                 },
                 Key::Ctrl('a') => {
-                    should_render = true;
                     self.search_term = "".to_string();
                     self.mode = state::Mode::Create;
                 },
                 _ => (),
             },
             Event::Mouse(mouse_event) => match mouse_event {
-                Mouse::ScrollDown(_) => {
-                    self.move_selection_down();
-                    should_render = true;
-                },
-                Mouse::ScrollUp(_) => {
-                    self.move_selection_up();
-                    should_render = true;
-                },
-                Mouse::LeftClick(line, _) => {
-                    self.handle_left_click(line);
-                    should_render = true;
-                },
-                _ => {},
+                Mouse::ScrollDown(_) => self.move_selection_down(),
+                Mouse::ScrollUp(_) => self.move_selection_up(),
+                Mouse::LeftClick(line, _) => self.handle_left_click(line),
+                _ => should_render = false,
             },
             _ => {
                 dbg!("Unknown event {:?}", event);
+                should_render = false;
             },
         };
         should_render
