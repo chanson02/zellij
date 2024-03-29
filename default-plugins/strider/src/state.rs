@@ -234,14 +234,19 @@ impl State {
         let src = self.get_selected_entry().expect("Expected a selected entry");
         let mut target_path = PathBuf::from(ROOT);
         target_path.push(&self.search_term);
-        let target = if src.is_folder() {
-            FsEntry::Dir(target_path)
-        } else {
-            FsEntry::File(target_path, src.size().expect("Target file should have a size"))
+        let target = match self.mode {
+            Mode::Create => FsEntry::File(target_path, 0),
+            _ => {
+                if src.is_folder() {
+                    FsEntry::Dir(target_path)
+                } else {
+                    FsEntry::File(target_path, src.size().expect("Target file should have a size"))
+                }
+            }
         };
 
         let _result = match self.mode {
-            Mode::Create => Ok(()),
+            Mode::Create => self.handle_file_create(target),
             Mode::Copy => self.handle_file_copy(src, target),
             Mode::Move => self.handle_file_move(src, target),
             Mode::Delete => {
@@ -252,33 +257,15 @@ impl State {
             _ => Ok(()),
         };
 
-        // let mut target = self.initial_cwd.clone();
-        // target.push(&self.search_term);
-        /*
-        let mut src = self.initial_cwd.clone();
-        let entry = self
-            .get_selected_entry()
-            .expect("Expected a selected entry");
-        src.push(entry.get_pathbuf_without_root_prefix());
-
-        match self.mode {
-            Mode::Create => self.handle_file_create(target),
-            Mode::Copy => self.handle_file_copy(src, target),
-            Mode::Move => self.handle_file_move(src, target),
-            Mode::Delete => {
-                if self.search_term == "y" {
-                    self.handle_file_delete(src);
-                }
-            },
-            _ => {},
-        };
         self.clear_search_term_or_descend(); // resets mode to Normal
-                                             // */
     }
-    fn handle_file_create(&self, target: PathBuf) {
-        if let Err(err) = std::fs::create_dir(&target) {
-            dbg!("Could not create {:?} file: {:?}", target, err);
+    fn handle_file_create(&self, target: FsEntry) -> Result<(), std::io::Error> {
+        let target_path = target.get_pathbuf();
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
+        std::fs::File::create(&target_path)?;
+        Ok(())
     }
     fn handle_file_copy(&self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
         let target_path = target.get_pathbuf();
