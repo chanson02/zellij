@@ -231,7 +231,9 @@ impl State {
     }
 
     pub fn handle_file_manipulation(&mut self) {
-        let src = self.get_selected_entry().expect("Expected a selected entry");
+        let src = self
+            .get_selected_entry()
+            .expect("Expected a selected entry");
         let mut target_path = PathBuf::from(ROOT);
         target_path.push(&self.search_term);
         let target = match self.mode {
@@ -240,9 +242,12 @@ impl State {
                 if src.is_folder() {
                     FsEntry::Dir(target_path)
                 } else {
-                    FsEntry::File(target_path, src.size().expect("Target file should have a size"))
+                    FsEntry::File(
+                        target_path,
+                        src.size().expect("Target file should have a size"),
+                    )
                 }
-            }
+            },
         };
 
         let result = match self.mode {
@@ -252,13 +257,21 @@ impl State {
             Mode::Delete => {
                 if self.search_term == "y" {
                     self.handle_file_delete(&src)
-                } else { Ok(()) }
+                } else {
+                    Ok(())
+                }
             },
             _ => Ok(()),
         };
 
         if let Err(err) = result {
-            dbg!("Unable to perform file manipulation", &self.mode, src, target, err);
+            dbg!(
+                "Unable to perform file manipulation",
+                &self.mode,
+                src,
+                target,
+                err
+            );
         }
 
         self.clear_search_term_or_descend(); // resets mode to Normal
@@ -286,7 +299,10 @@ impl State {
                 let target_entry_path = target_path.join(entry_path.file_name().unwrap());
 
                 if entry_path.is_dir() {
-                    self.handle_file_copy(&FsEntry::Dir(entry_path.clone()), &FsEntry::Dir(target_entry_path))?;
+                    self.handle_file_copy(
+                        &FsEntry::Dir(entry_path.clone()),
+                        &FsEntry::Dir(target_entry_path),
+                    )?;
                 } else {
                     std::fs::copy(&entry_path, &target_entry_path)?;
                 }

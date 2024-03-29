@@ -77,7 +77,9 @@ impl ZellijPlugin for State {
                 Key::Esc | Key::Ctrl('c') => self.clear_search_term_or_descend(),
                 Key::Up => self.move_selection_up(),
                 Key::Down => self.move_selection_down(),
-                Key::Char('\n') if self.handling_filepick_request_from.is_some() => self.send_filepick_response(),
+                Key::Char('\n') if self.handling_filepick_request_from.is_some() => {
+                    self.send_filepick_response()
+                },
                 Key::Char('\n') => match self.mode {
                     state::Mode::Normal | state::Mode::Searching => self.open_selected_path(),
                     state::Mode::Create
