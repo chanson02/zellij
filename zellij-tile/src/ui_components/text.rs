@@ -21,7 +21,7 @@ impl Text {
     }
     pub fn selected(mut self) -> Self {
         self.selected = true;
-        self.color_range(1, ..)
+        self.color_range(2, ..)
     }
     pub fn color_indices(mut self, index_level: usize, mut indices: Vec<usize>) -> Self {
         self.pad_indices(index_level);
