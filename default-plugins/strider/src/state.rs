@@ -242,7 +242,7 @@ impl State {
 
         let _result = match self.mode {
             Mode::Create => Ok(()),
-            Mode::Copy => Ok(()),
+            Mode::Copy => self.handle_file_copy(src, target),
             Mode::Move => self.handle_file_move(src, target),
             Mode::Delete => {
                 if self.search_term == "y" {
@@ -280,10 +280,30 @@ impl State {
             dbg!("Could not create {:?} file: {:?}", target, err);
         }
     }
-    fn handle_file_copy(&self, source: PathBuf, target: PathBuf) {
-        if let Err(err) = std::fs::copy(&source, &target) {
-            dbg!("Cound not copy file {:?} -> {:?}: {:?}", source, target, err);
+    fn handle_file_copy(&self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
+        let target_path = target.get_pathbuf();
+        let src_path = source.get_pathbuf();
+
+        if source.is_folder() {
+            if !target_path.exists() {
+                std::fs::create_dir_all(target_path.clone())?;
+            }
+
+            for entry in std::fs::read_dir(src_path)? {
+                let entry = entry?;
+                let entry_path = entry.path();
+                let target_entry_path = target_path.join(entry_path.file_name().unwrap());
+
+                if entry_path.is_dir() {
+                    self.handle_file_copy(FsEntry::Dir(entry_path.clone()), FsEntry::Dir(target_entry_path))?;
+                } else {
+                    std::fs::copy(&entry_path, &target_entry_path)?;
+                }
+            }
+        } else {
+            std::fs::copy(&source.get_pathbuf(), &target.get_pathbuf())?;
         }
+        Ok(())
     }
     fn handle_file_move(&mut self, source: FsEntry, target: FsEntry) -> Result<(), std::io::Error> {
         std::fs::rename(&source.get_pathbuf(), target.get_pathbuf())?;
