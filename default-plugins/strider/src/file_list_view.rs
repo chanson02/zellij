@@ -165,6 +165,11 @@ impl FsEntry {
             FsEntry::File(_, size) => Some(*size),
         }
     }
+    pub fn get_pathbuf(&self) -> PathBuf {
+        match self {
+            FsEntry::Dir(path) | FsEntry::File(path, _) => path.clone()
+        }
+    }
     pub fn get_pathbuf_without_root_prefix(&self) -> PathBuf {
         match self {
             FsEntry::Dir(p) => p

@@ -231,9 +231,22 @@ impl State {
     }
 
     pub fn handle_file_manipulation(&mut self) {
-        let mut target = self.initial_cwd.clone();
-        target.push(&self.search_term);
+        let src = self.get_selected_entry().expect("Expected a selected entry");
+        let _result = match self.mode {
+            Mode::Create => Ok(()),
+            Mode::Copy => Ok(()),
+            Mode::Move => Ok(()),
+            Mode::Delete => {
+                if self.search_term == "y" {
+                    self.handle_file_delete(src)
+                } else { Ok(()) }
+            },
+            _ => Ok(()),
+        };
 
+        // let mut target = self.initial_cwd.clone();
+        // target.push(&self.search_term);
+        /*
         let mut src = self.initial_cwd.clone();
         let entry = self
             .get_selected_entry()
@@ -252,6 +265,7 @@ impl State {
             _ => {},
         };
         self.clear_search_term_or_descend(); // resets mode to Normal
+                                             // */
     }
     fn handle_file_create(&self, target: PathBuf) {
         if let Err(err) = std::fs::create_dir(&target) {
@@ -268,10 +282,14 @@ impl State {
             dbg!("Cound not rename file {:?} -> {:?}: {:?}", source, target, err);
         }
     }
-    fn handle_file_delete(&self, source: PathBuf) {
-        if let Err(err) = std::fs::remove_file(&source) {
-            dbg!("Cound not delete {:?} file: {:?}", source, err);
+    fn handle_file_delete(&self, source: FsEntry) -> Result<(), std::io::Error> {
+        let path = source.get_pathbuf();
+        if source.is_folder() {
+            std::fs::remove_dir_all(&path)?;
+        } else {
+            std::fs::remove_file(&path)?;
         }
+        Ok(())
     }
 }
 
