@@ -171,16 +171,8 @@ impl FsEntry {
         }
     }
     pub fn get_pathbuf_without_root_prefix(&self) -> PathBuf {
-        match self {
-            FsEntry::Dir(p) => p
-                .strip_prefix(ROOT)
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|_| p.clone()),
-            FsEntry::File(p, _) => p
-                .strip_prefix(ROOT)
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|_| p.clone()),
-        }
+        let p = self.get_pathbuf();
+        p.strip_prefix(ROOT).map(|p| p.to_path_buf()).unwrap_or_else(|_| p.clone())
     }
 
     pub fn is_hidden_file(&self) -> bool {
